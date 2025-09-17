@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func main() {
@@ -17,13 +20,40 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	defer file.Close()
-	for {
-		readBuffer := make([]byte, 8)
-		_, err := file.Read(readBuffer)
-		if err != nil {
-			os.Exit(0)
+	ch := getLinesChannel(file)
+	for line := range ch {
+		fmt.Printf("read: %s\n", line)
+	}
+}
+
+func getLinesChannel(f io.ReadCloser) <-chan string {
+	ch := make(chan string)
+	go func() {
+		defer close(ch)
+		defer f.Close()
+		currentLine := ""
+		for {
+			readBuffer := make([]byte, 8)
+			_, err := f.Read(readBuffer)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				fmt.Printf("error: %s\n", err.Error())
+			}
+			stringFromBuffer := string(readBuffer)
+			stringArr := strings.Split(stringFromBuffer, "\n")
+			currentLine = lineSeparator(stringArr, currentLine, ch)
 		}
-		fmt.Printf("read: %s\n", readBuffer)
+	}()
+	return ch
+}
+
+func lineSeparator(stringArr []string, currentLine string, ch chan string) string {
+	if len(stringArr) == 1 {
+		return currentLine + stringArr[0]
+	} else {
+		ch <- currentLine + stringArr[0]
+		return lineSeparator(stringArr[1:], "", ch)
 	}
 }
