@@ -4,43 +4,48 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
+	"log"
+	"net"
 	"strings"
 )
 
 func main() {
-	filepath, err := filepath.Abs("./message.txt")
+	l, err := net.Listen("tcp", ":42069")
 	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	file, err := os.Open(filepath)
-	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err)
 	}
 
-	ch := getLinesChannel(file)
-	for line := range ch {
-		fmt.Printf("read: %s\n", line)
+	defer l.Close()
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Fatal(err)
+		}
+		ch := getLinesChannel(conn)
+		for line := range ch {
+			fmt.Println(line)
+		}
 	}
+
 }
 
-func getLinesChannel(f io.ReadCloser) <-chan string {
+func getLinesChannel(c net.Conn) <-chan string {
 	ch := make(chan string)
 	go func() {
+		defer c.Close()
 		defer close(ch)
-		defer f.Close()
 		currentLine := ""
 		for {
 			readBuffer := make([]byte, 8)
-			_, err := f.Read(readBuffer)
+			_, err := c.Read(readBuffer)
 			if err != nil {
+				if currentLine != "" {
+					ch <- currentLine
+				}
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				fmt.Printf("error: %s\n", err.Error())
+				break
 			}
 			stringFromBuffer := string(readBuffer)
 			stringArr := strings.Split(stringFromBuffer, "\n")
