@@ -20,6 +20,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+
 	ch := getLinesChannel(file)
 	for line := range ch {
 		fmt.Printf("read: %s\n", line)
