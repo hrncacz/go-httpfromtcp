@@ -33,7 +33,14 @@ func main() {
 - Method: %s
 - Target: %s
 - Version: %s
+Headers:
 `, req.RequestLine.Method, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
+		for k, v := range req.Headers {
+			fmt.Printf("- %s: %s\n", k, v)
+		}
+		body := req.Body
+		strBody := string(body)
+		fmt.Printf("Body:\n%s", strBody)
 	}
 
 }

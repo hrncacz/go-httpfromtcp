@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/hrncacz/go-httpfromtcp/internal/headers"
 )
 
 const (
@@ -24,12 +27,16 @@ type RequestLine struct {
 type Request struct {
 	ParseState  parseState
 	RequestLine RequestLine
+	Headers     headers.Headers
+	Body        []byte
 }
 
 type parseState int
 
 const (
 	parseStateInitialized parseState = iota
+	parseStateHeaders
+	parseStateBody
 	parseStateDone
 )
 
@@ -43,8 +50,65 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *requestLine
-		r.ParseState = parseStateDone
+		r.ParseState = parseStateHeaders
 		return n, nil
+	case parseStateHeaders:
+		fallthrough
+	case parseStateBody:
+		totalBytesParsed := 0
+		for r.ParseState != parseStateDone {
+			n, err := r.parseSingle(data[totalBytesParsed:])
+			if err != nil {
+				return totalBytesParsed, err
+			}
+			totalBytesParsed += n
+			if n == 0 {
+				break
+			}
+		}
+		return totalBytesParsed, nil
+	case parseStateDone:
+		return 0, fmt.Errorf("error reading data from done state")
+	default:
+
+		return 0, fmt.Errorf("error reading data from done state")
+	}
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
+	switch r.ParseState {
+	case parseStateHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.ParseState = parseStateBody
+			return n, nil
+		} else {
+			return n, nil
+		}
+
+	case parseStateBody:
+		value, exist := r.Headers.Get("Content-Length")
+		if !exist {
+			r.Body = slices.Concat(r.Body, data)
+			r.ParseState = parseStateDone
+			return 0, nil
+		}
+		contentLength, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, fmt.Errorf("invalid content-length header: %s", err)
+		}
+		r.Body = slices.Concat(r.Body, data)
+		if len(r.Body) > contentLength {
+			return len(data), errors.New("length of body is greater thatn value in content-length header")
+		} else if len(r.Body) == contentLength {
+			r.ParseState = parseStateDone
+			return len(data), nil
+		} else {
+			return len(data), nil
+		}
 	case parseStateDone:
 		return 0, fmt.Errorf("error reading data from done state")
 	default:
@@ -54,8 +118,12 @@ func (r *Request) parse(data []byte) (int, error) {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := &Request{}
+	request := &Request{
+		ParseState: parseStateInitialized,
+		Body:       []byte{},
+	}
 	readToIndex := 0
+	request.Headers = headers.NewHeaders()
 	buf := make([]byte, buffSize)
 	for request.ParseState != parseStateDone {
 		if readToIndex >= len(buf) {
@@ -65,9 +133,8 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 		nrBytesToRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
-			if errors.Is(err, io.EOF) {
-				request.ParseState = parseStateDone
-				break
+			if errors.Is(err, io.EOF) && request.ParseState == parseStateDone {
+				return request, nil
 			}
 			return nil, err
 		}

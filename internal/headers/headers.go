@@ -43,6 +43,12 @@ func (h Headers) Set(key, value string) {
 	}
 }
 
+func (h Headers) Get(value string) (string, bool) {
+	lowerValue := strings.ToLower(value)
+	v, exist := h[lowerValue]
+	return v, exist
+}
+
 func parseHeader(data []byte) (string, string, error) {
 	dataToString := string(data)
 	dataTrimed := strings.Trim(dataToString, " ")
