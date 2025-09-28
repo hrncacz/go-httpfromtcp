@@ -35,12 +35,17 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 }
 
 func (h Headers) Set(key, value string) {
+	key = strings.ToLower(key)
 	currentValue, exist := h[key]
 	if exist {
 		h[key] = fmt.Sprintf("%s, %s", currentValue, value)
 	} else {
 		h[key] = value
 	}
+}
+
+func (h Headers) SetNew(key, value string) {
+	h[strings.ToLower(key)] = value
 }
 
 func (h Headers) Get(value string) (string, bool) {
