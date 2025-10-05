@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/hrncacz/go-httpfromtcp/internal/headers"
 )
@@ -20,6 +21,7 @@ const (
 	writerStateStatusLine writerState = iota
 	writerStateHeaders
 	writerStateBody
+	writerStateTrailers
 )
 
 type Writer struct {
@@ -51,6 +53,20 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 	return nil
 }
 
+func (w *Writer) WriteTrailers(headers headers.Headers) error {
+	if w.writerState < writerStateTrailers {
+		return errors.New("writer expects status line, headers and body before trailers")
+	}
+	// _, err := w.writer.Write([]byte("0\r\n"))
+	// if err != nil {
+	// 	return err
+	// }
+	if err := WriteHeaders(w.writer, headers); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (w *Writer) WriteBody(body []byte) (int, error) {
 	if w.writerState < writerStateBody {
 		return 0, errors.New("writer expects status line and headers before sending body")
@@ -72,6 +88,30 @@ func WriteStatusLine(w io.Writer, status int) error {
 	startLine = fmt.Sprintf("%s%d %s\r\n", startLine, status, statusText)
 	w.Write([]byte(startLine))
 	return nil
+}
+
+func (w *Writer) WriteChunkedBody(body []byte) (int, error) {
+	chunkLength := len(body)
+	chunkLengthHex := fmt.Sprintf("%x\r\n", chunkLength)
+	chunkResponse := slices.Concat([]byte(chunkLengthHex), body, []byte("\r\n"))
+	n, err := w.writer.Write(chunkResponse)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone(hasTrailers bool) (int, error) {
+	chunkResponse := slices.Concat([]byte("0\r\n"))
+	if !hasTrailers {
+		chunkResponse = slices.Concat(chunkResponse, []byte("\r\n"))
+	}
+	n, err := w.writer.Write(chunkResponse)
+	if err != nil {
+		return 0, err
+	}
+	w.writerState = writerStateTrailers
+	return n, nil
 }
 
 func GetDefaultHeaders(contentLength int) headers.Headers {

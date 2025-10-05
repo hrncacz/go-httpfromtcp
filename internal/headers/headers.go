@@ -48,10 +48,15 @@ func (h Headers) SetNew(key, value string) {
 	h[strings.ToLower(key)] = value
 }
 
-func (h Headers) Get(value string) (string, bool) {
-	lowerValue := strings.ToLower(value)
-	v, exist := h[lowerValue]
+func (h Headers) Get(key string) (string, bool) {
+	lowerKey := strings.ToLower(key)
+	v, exist := h[lowerKey]
 	return v, exist
+}
+
+func (h Headers) Remove(key string) {
+	lowerKey := strings.ToLower(key)
+	delete(h, lowerKey)
 }
 
 func parseHeader(data []byte) (string, string, error) {
